@@ -4,17 +4,18 @@ Tibetan Title Extraction
 Description
 -----------------
 This script extracts title-tagged lines from TEI XML files - developed specifically for use with Transkribus 'structure' tags e.g. <ab facs="###" type="Title">.
+The script itself identifies titles via <zone subtype="Title" rendition="Line"> elements in the facsimile, linked from <lb facs="#...">.
 # --- todo - add more data on export options selected from Transkribus e.g. <lb> and zones
 
 For each title found, outputs:
-  - batch_name        : from <titleStmt><title type="main">
-  - title_text        : the transcribed title line (multiple lines joined with ' | ')
-  - title_line_count  : number of manuscript lines merged into this title
-  - image_name        : name of the image from <graphic url="..."> in the facsimile section
-  - page_n            : page number (<pb n="...">)
-  - pb_since_last     : number of <pb> breaks since the previous title (proxy for how many pages in each text)
-  - context_before    : N lines of text preceding the title (default 3); ||| separated for Tibetan (Unicode)
-  - context_after     : N lines of text following the title (default 3); ||| separated for Tibetan (Unicode)
+  - batch_name            : from <titleStmt><title type="main">
+  - title_text            : the transcribed title line (multiple lines joined with ' | ')
+  - title_line_count      : number of manuscript lines merged into this title
+  - image_name            : name of the image from <graphic url="..."> in the facsimile section
+  - page_n                : page number (<pb n="...">)
+  - pb_since_last_title   : number of <pb> breaks since the previous title (proxy for how many pages in each text)
+  - context_before        : N lines of text preceding the title (default 3); ||| separated for Tibetan (Unicode)
+  - context_after         : N lines of text following the title (default 3); ||| separated for Tibetan (Unicode)
 
 Multi-line title merging
 ------------------------
@@ -48,11 +49,12 @@ To process multiple files:
 Notes
 ------------------------
 This script assumes a specific Transkribus export configuration (structure tags, <lb> line export, and zone/region export all enabled, with subtype="Title" applied to title lines).
-A mismatched export configuration will not raise an error - it will likely produce zero (or incomplete) titles.
+A mismatched export configuration will not raise an error, but will likely produce zero (or incomplete) titles.
 """
 
 import argparse
 import csv
+import platform
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -63,6 +65,16 @@ XML_NS = 'http://www.w3.org/XML/1998/namespace'
 
 # Separator used when joining multi-line titles into a single string
 MULTILINE_SEP = ' | '
+
+
+def env_info() -> str:
+    """
+    Python / lxml / libxml2 versions, for recording how a run was produced.
+    """
+    fmt = lambda v: '.'.join(map(str, v))
+    return (f"Python {platform.python_version()}, "
+            f"lxml {fmt(etree.LXML_VERSION)}, "
+            f"libxml2 {fmt(etree.LIBXML_VERSION)}")
 
 
 def get_text_from_lb(lb: etree._Element) -> str:
@@ -129,14 +141,11 @@ def build_image_map(tree: etree._ElementTree) -> dict:
 
 def build_title_group_map(tree: etree._ElementTree, zone_map: dict) -> dict:
     """
-    Identify Title line zones that share a parent TextRegion and should be merged into a single output row.
-
+    Identify Title line zones that share a parent TextRegion and should be merged into a single output row. See 'Multi-line title merging' above for cases handled.
     Returns a dict mapping each Title line zone id to a group key: {zone_id: group_key}
-
+    
     For Case 1, the group key is the zone_id itself — no merging happens.
-
     For Case 2, all lines in that region share the parent region's xml:id as their group key, so they will be collected as one merged row.
-
     Only zones explicitly tagged subtype="Title" are included. Untagged sibling lines within a Title TextRegion (Case 3) are excluded.
     """
     # Map parent_region_id → [child Title line zone ids]
@@ -354,6 +363,7 @@ def main():
                         help='Number of context lines before/after title (default: 3)')
     parser.add_argument('--output', default='titles_extracted.csv',
                         help='Output CSV file (default: titles_extracted.csv)')
+      parser.add_argument('--version', action='version', version=env_info())
     args = parser.parse_args()
 
     fieldnames = [
